@@ -4,9 +4,16 @@
 #include <util/delay.h>
 #include <avr/wdt.h>
 #include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
 
 #include "usbdrv.h"
 #include "oddebug.h"
+#include "event.h"
+#include "uart.h"
+#include "timer.h"
+#include "led.h"
+#include "button.h"
 
 /* ----------------------- hardware I/O abstraction ------------------------ */
 
@@ -35,19 +42,6 @@
    PD7	Key 17
    */
 
-void led_init(void)
-{
-   DDRD |= (1<<PD4);
-}
-
-void led_set(bool onoff)
-{
-   if(onoff)
-      PORTD |= (1<<PD4);
-   else
-      PORTD &= ~(1<<PD4);
-}
-
 static void hardwareInit(void)
 {
 
@@ -55,17 +49,18 @@ static void hardwareInit(void)
    DDRB = 0;       /* all pins input */
    PORTC = 0xff;   /* activate all pull-ups */
    DDRC = 0;       /* all pins input */
-   DDRD |= (1<<PD0);   /* debug tx output */
+   //DDRD |= (1<<PD0);   /* debug tx output */
    //PORTD = 0xe3;   /* 1111 0011 bin: activate pull-ups except on USB lines */
    
    led_init();
+   timer_init();
+   uart_init(UART_BAUD(9600));
+   button_init();
 
    usbDeviceDisconnect();
    _delay_ms(100);
    usbDeviceConnect();
 
-   /* configure timer 0 for a rate of 12M/(1024 * 256) = 45.78 Hz (~22ms) */
-   TCCR0B = 5;      /* timer 0 prescaler: 1024 */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -256,7 +251,40 @@ uchar	usbFunctionSetup(uchar data[8])
    return 0;
 }
 
+
+void handle_event(event_t *ev)
+{
+   static uint8_t b = 0;
+
+   switch(ev->type) {
+      case EV_TICK_1HZ:
+         break;
+
+      case EV_TICK_10HZ:
+         break;
+
+      case EV_TICK_100HZ:
+         break;
+
+      case EV_BUTTON:
+         printf("button %d\n", ev->button.id);
+         if(ev->button.id == BUTTON_ID_R_CW) {
+            if(b < 16) b++;
+            led_set(b);
+         }
+         if(ev->button.id == BUTTON_ID_R_CCW) {
+            if(b > 0) b--;
+            led_set(b);
+         }
+         printf("%d\n", b);
+         break;
+
+      default:
+         break;
+   }
+}
 /* ------------------------------------------------------------------------- */
+
 
 int	main(void)
 {
@@ -267,17 +295,19 @@ int	main(void)
    hardwareInit();
    odDebugInit();
    usbInit();
+   
    sei();
-   DBG1(0x00, 0, 0);
 
    for(;;) {
 
+      event_t ev;
+		bool avail = event_poll(&ev);
+      if(avail) {
+         handle_event(&ev);
+      }
+
       wdt_reset();
       usbPoll();
-
-      static uint16_t blink = 0;
-      led_set(!!(blink & 0x4000));
-      blink++;
 
       key = keyPressed();
       if(lastKey != key){
