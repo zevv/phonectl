@@ -1,18 +1,9 @@
-/* Name: main.c
- * Project: HID-Test
- * Author: Christian Starkjohann
- * Creation Date: 2006-02-02
- * Tabsize: 4
- * Copyright: (c) 2006 by OBJECTIVE DEVELOPMENT Software GmbH
- * License: GNU GPL v2 (see License.txt) or proprietary (CommercialLicense.txt)
- * This Revision: $Id$
- */
-
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <util/delay.h>
 #include <avr/wdt.h>
+#include <stdbool.h>
 
 #include "usbdrv.h"
 #include "oddebug.h"
@@ -44,6 +35,19 @@
    PD7	Key 17
    */
 
+void led_init(void)
+{
+   DDRD |= (1<<PD4);
+}
+
+void led_set(bool onoff)
+{
+   if(onoff)
+      PORTD |= (1<<PD4);
+   else
+      PORTD &= ~(1<<PD4);
+}
+
 static void hardwareInit(void)
 {
 
@@ -53,6 +57,8 @@ static void hardwareInit(void)
    DDRC = 0;       /* all pins input */
    DDRD |= (1<<PD0);   /* debug tx output */
    //PORTD = 0xe3;   /* 1111 0011 bin: activate pull-ups except on USB lines */
+   
+   led_init();
 
    usbDeviceDisconnect();
    _delay_ms(100);
@@ -263,9 +269,16 @@ int	main(void)
    usbInit();
    sei();
    DBG1(0x00, 0, 0);
-   for(;;){	/* main event loop */
+
+   for(;;) {
+
       wdt_reset();
       usbPoll();
+
+      static uint16_t blink = 0;
+      led_set(!!(blink & 0x4000));
+      blink++;
+
       key = keyPressed();
       if(lastKey != key){
          lastKey = key;
