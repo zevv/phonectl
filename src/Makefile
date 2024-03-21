@@ -6,6 +6,7 @@ OBJECTS += uart.o
 OBJECTS += event.o
 OBJECTS += timer.o
 OBJECTS += led.o
+OBJECTS += usbpwr.o
 OBJECTS += button.o
 OBJECTS += usbdrv/usbdrv.o
 OBJECTS += usbdrv/usbdrvasm.o

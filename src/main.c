@@ -14,6 +14,7 @@
 #include "timer.h"
 #include "led.h"
 #include "button.h"
+#include "usbpwr.h"
 
 /* ----------------------- hardware I/O abstraction ------------------------ */
 
@@ -44,22 +45,15 @@
 
 static void hardwareInit(void)
 {
-
-   PORTB = 0xff;   /* activate all pull-ups */
-   DDRB = 0;       /* all pins input */
-   PORTC = 0xff;   /* activate all pull-ups */
-   DDRC = 0;       /* all pins input */
-   //DDRD |= (1<<PD0);   /* debug tx output */
-   //PORTD = 0xe3;   /* 1111 0011 bin: activate pull-ups except on USB lines */
-   
    led_init();
    timer_init();
    uart_init(UART_BAUD(9600));
    button_init();
+   usbpwr_init();
 
-   usbDeviceDisconnect();
+   //usbDeviceDisconnect();
    _delay_ms(100);
-   usbDeviceConnect();
+   //usbDeviceConnect();
 
 }
 
@@ -67,29 +61,6 @@ static void hardwareInit(void)
 
 #define NUM_KEYS    17
 
-/* The following function returns an index for the first key pressed. It
- * returns 0 if no key is pressed.
- */
-static uchar    keyPressed(void)
-{
-   uchar   i, mask, x;
-
-   x = PINB;
-   mask = 1;
-   for(i=0;i<6;i++){
-      if((x & mask) == 0)
-         return i + 1;
-      mask <<= 1;
-   }
-   x = PINC;
-   mask = 1;
-   for(i=0;i<6;i++){
-      if((x & mask) == 0)
-         return i + 7;
-      mask <<= 1;
-   }
-   return 0;
-}
 
 /* ------------------------------------------------------------------------- */
 /* ----------------------------- USB interface ----------------------------- */
@@ -224,6 +195,7 @@ static const uchar  keyReport[NUM_KEYS + 1][2] PROGMEM = {
 
 static void buildReport(uchar key)
 {
+   printf("br %d\n", key);
    /* This (not so elegant) cast saves us 10 bytes of program memory */
    *(int *)reportBuffer = pgm_read_word(keyReport[key]);
 }
@@ -232,17 +204,23 @@ uchar	usbFunctionSetup(uchar data[8])
 {
    usbRequest_t    *rq = (void *)data;
 
+   printf("us\n");
+
    usbMsgPtr = reportBuffer;
-   if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS){    /* class request type */
-      PORTD ^= (1<<PD0);
-      if(rq->bRequest == USBRQ_HID_GET_REPORT){  /* wValue: ReportType (highbyte), ReportID (lowbyte) */
+   if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS) {
+      /* class request type */
+      if(rq->bRequest == USBRQ_HID_GET_REPORT) {
+         /* wValue: ReportType (highbyte), ReportID (lowbyte) */
+         printf("get report\n");
          /* we only have one report type, so don't look at wValue */
-         buildReport(keyPressed());
+         buildReport(1);
          return sizeof(reportBuffer);
-      }else if(rq->bRequest == USBRQ_HID_GET_IDLE){
+      } else if(rq->bRequest == USBRQ_HID_GET_IDLE) {
+         printf("get idle\n");
          usbMsgPtr = &idleRate;
          return 1;
-      }else if(rq->bRequest == USBRQ_HID_SET_IDLE){
+      } else if(rq->bRequest == USBRQ_HID_SET_IDLE) {
+         printf("set idle\n");
          idleRate = rq->wValue.bytes[1];
       }
    }else{
@@ -268,6 +246,12 @@ void handle_event(event_t *ev)
 
       case EV_BUTTON:
          printf("button %d\n", ev->button.id);
+         if(ev->button.id == BUTTON_ID_L_CW) {
+            usbpwr_enable_vbus(true);
+         }
+         if(ev->button.id == BUTTON_ID_L_CCW) {
+            usbpwr_enable_vbus(false);
+         }
          if(ev->button.id == BUTTON_ID_R_CW) {
             if(b < 16) b++;
             led_set(b);
@@ -279,62 +263,53 @@ void handle_event(event_t *ev)
          printf("%d\n", b);
          break;
 
+      case EV_UART:
+         printf("'%c'\n", ev->uart.c);
+         if(ev->uart.c == '1') usbpwr_enable_vbus(true);
+         if(ev->uart.c == '0') usbpwr_enable_vbus(false);
+         if(ev->uart.c == 'u') usbpwr_set_cc(CC_PULLUP);
+         if(ev->uart.c == 'd') usbpwr_set_cc(CC_PULLDOWN);
+         if(ev->uart.c == 'n') usbpwr_set_cc(CC_NONE);
+         if(ev->uart.c == 'c') usbpwr_connect(true);
+         if(ev->uart.c == 'C') usbpwr_connect(false);
+         if(ev->uart.c == 'k') {
+            if(usbInterruptIsReady()) {
+               printf("usb ready\n");
+               buildReport(1);
+               usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+            } else {
+               printf("usb not ready\n");
+            }
+         }
+         break;
+
       default:
          break;
    }
 }
-/* ------------------------------------------------------------------------- */
 
 
-int	main(void)
+int main(void)
 {
-   uchar   key, lastKey = 0, keyDidChange = 0;
-   uchar   idleCounter = 0;
-
    wdt_enable(WDTO_2S);
    hardwareInit();
    odDebugInit();
    usbInit();
-   
+
    sei();
 
    for(;;) {
 
       event_t ev;
-		bool avail = event_poll(&ev);
+      bool avail = event_poll(&ev);
       if(avail) {
          handle_event(&ev);
       }
 
       wdt_reset();
       usbPoll();
-
-      key = keyPressed();
-      if(lastKey != key){
-         lastKey = key;
-         keyDidChange = 1;
-      }
-      if(TIFR0 & (1<<TOV0)){   /* 22 ms timer */
-         TIFR0 = 1<<TOV0;
-         if(idleRate != 0){
-            if(idleCounter > 4){
-               idleCounter -= 5;   /* 22 ms in units of 4 ms */
-            }else{
-               idleCounter = idleRate;
-               keyDidChange = 1;
-            }
-         }
-      }
-      if(keyDidChange && usbInterruptIsReady()){
-         keyDidChange = 0;
-         /* use last key and not current key status in order to avoid lost
-            changes in key status. */
-         buildReport(lastKey);
-         usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-      }
    }
    return 0;
 }
 
-/* ------------------------------------------------------------------------- */
 // vi: ts=3 sw=3 et

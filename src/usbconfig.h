@@ -41,13 +41,13 @@ the newest features and options.
 
 /* ----------------------- Optional Hardware Config ------------------------ */
 
-#define USB_CFG_PULLUP_IOPORTNAME   D
+//#define USB_CFG_PULLUP_IOPORTNAME   C
 /* If you connect the 1.5k pullup resistor from D- to a port pin instead of
  * V+, you can connect and disconnect the device from firmware by calling
  * the macros usbDeviceConnect() and usbDeviceDisconnect() (see usbdrv.h).
  * This constant defines the port on which the pullup resistor is connected.
  */
-#define USB_CFG_PULLUP_BIT          4
+//#define USB_CFG_PULLUP_BIT          2
 /* This constant defines the bit number in USB_CFG_PULLUP_IOPORT (defined
  * above) where the 1.5k pullup resistor is connected. See description
  * above for details.
@@ -115,7 +115,7 @@ the newest features and options.
  * education only... DO NOT LET DEVICES WITH THIS VID ESCAPE YOUR LAB!
  * The Product-ID is a random number.
  */
-#define  USB_CFG_VENDOR_ID       0x42, 0x42
+#define  USB_CFG_VENDOR_ID       0x8c, 0x19
 /* USB vendor ID for the device, low byte first. If you have registered your
  * own Vendor ID, define it here. Otherwise you use obdev's free shared
  * VID/PID pair. Be sure to read USBID-License.txt for rules!
@@ -130,8 +130,8 @@ the newest features and options.
 #define USB_CFG_DEVICE_VERSION  0x00, 0x01
 /* Version number of the device: Minor number first, then major number.
  */
-#define USB_CFG_VENDOR_NAME     'o', 'b', 'd', 'e', 'v', '.', 'a', 't'
-#define USB_CFG_VENDOR_NAME_LEN 8
+#define USB_CFG_VENDOR_NAME     'z', 'e', 'v', 'v'
+#define USB_CFG_VENDOR_NAME_LEN 4
 /* These two values define the vendor name returned by the USB device. The name
  * must be given as a list of characters under single quotes. The characters
  * are interpreted as Unicode (UTF-16) entities.
@@ -140,8 +140,8 @@ the newest features and options.
  * obdev's free shared VID/PID pair. See the file USBID-License.txt for
  * details. 
  */
-#define USB_CFG_DEVICE_NAME     'H', 'I', 'D', 'K', 'e', 'y', 's'
-#define USB_CFG_DEVICE_NAME_LEN 7
+#define USB_CFG_DEVICE_NAME     'p', 'h', 'o', 'n', 'e', 'c', 't', 'l'
+#define USB_CFG_DEVICE_NAME_LEN 8
 /* Same as above for the device name. If you don't want a device name, undefine
  * the macros. See the file USBID-License.txt before you assign a name.
  */

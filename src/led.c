@@ -15,15 +15,9 @@ void led_init(void)
 
 void led_set(uint8_t b)
 {
-	brightness = b;
+	brightness = (b > 0) ? (1<<b) : 0;
 	if(brightness > 16) brightness = 16;
 }
-
-//   if(onoff)
-//      PORTD |= (1<<PD4);
-//   else
-//      PORTD &= ~(1<<PD4);
-//}
 
 
 void led_pwm(void)
