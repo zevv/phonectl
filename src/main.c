@@ -16,32 +16,6 @@
 #include "button.h"
 #include "usbpwr.h"
 
-/* ----------------------- hardware I/O abstraction ------------------------ */
-
-/* pin assignments:
-   PB0	Key 1
-   PB1	Key 2
-   PB2	Key 3
-   PB3	Key 4
-   PB4	Key 5
-   PB5 Key 6
-
-   PC0	Key 7
-   PC1	Key 8
-   PC2	Key 9
-   PC3	Key 10
-   PC4	Key 11
-   PC5	Key 12
-
-
-   PD1	debug tx
-   PD2	USB+ (int0)
-   PD3	USB-
-   PD4	USB res pullup 1.5k
-   PD5	Key 15
-   PD6	Key 16
-   PD7	Key 17
-   */
 
 static void hardwareInit(void)
 {
@@ -172,34 +146,6 @@ const PROGMEM char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] 
 #define KEY_MEDIA_MUTE 0x88
 
 
-static const uchar  keyReport[NUM_KEYS + 1][2] PROGMEM = {
-   /* none */  {0, 0},                     /* no key pressed */
-   /*  1 */    {MOD_SHIFT_LEFT, KEY_A},
-   /*  2 */    {MOD_SHIFT_LEFT, KEY_B},
-   /*  3 */    {MOD_SHIFT_LEFT, KEY_C},
-   /*  4 */    {MOD_SHIFT_LEFT, KEY_D},
-   /*  5 */    {MOD_SHIFT_LEFT, KEY_E},
-   /*  6 */    {MOD_SHIFT_LEFT, KEY_F},
-   /*  7 */    {MOD_SHIFT_LEFT, KEY_G},
-   /*  8 */    {MOD_SHIFT_LEFT, KEY_H},
-   /*  9 */    {MOD_SHIFT_LEFT, KEY_I},
-   /* 10 */    {0, KEY_VOLUME_UP},
-   /* 11 */    {MOD_SHIFT_LEFT, KEY_K},
-   /* 12 */    {MOD_SHIFT_LEFT, KEY_L},
-   /* 13 */    {MOD_SHIFT_LEFT, KEY_M},
-   /* 14 */    {MOD_SHIFT_LEFT, KEY_N},
-   /* 15 */    {MOD_SHIFT_LEFT, KEY_O},
-   /* 16 */    {MOD_SHIFT_LEFT, KEY_P},
-   /* 17 */    {MOD_SHIFT_LEFT, KEY_Q},
-};
-
-static void buildReport(uchar key)
-{
-   printf("br %d\n", key);
-   /* This (not so elegant) cast saves us 10 bytes of program memory */
-   *(int *)reportBuffer = pgm_read_word(keyReport[key]);
-}
-
 uchar	usbFunctionSetup(uchar data[8])
 {
    usbRequest_t    *rq = (void *)data;
@@ -213,7 +159,6 @@ uchar	usbFunctionSetup(uchar data[8])
          /* wValue: ReportType (highbyte), ReportID (lowbyte) */
          printf("get report\n");
          /* we only have one report type, so don't look at wValue */
-         buildReport(1);
          return sizeof(reportBuffer);
       } else if(rq->bRequest == USBRQ_HID_GET_IDLE) {
          printf("get idle\n");
@@ -229,6 +174,30 @@ uchar	usbFunctionSetup(uchar data[8])
    return 0;
 }
 
+#define REP_Q_SIZE 8
+
+struct rep_q {
+   uint16_t data[REP_Q_SIZE];
+   uint8_t head;
+   uint8_t tail;
+} rep_q;
+
+
+void rep_push(uint8_t mod, uint8_t key)
+{
+   rep_q.data[rep_q.head] = (mod << 8) | key;
+   rep_q.head = (rep_q.head + 1) % REP_Q_SIZE;
+}
+
+bool rep_q_pop(uint8_t *mod, uint8_t *key)
+{
+   if(rep_q.head == rep_q.tail) return false;
+   uint16_t data = rep_q.data[rep_q.tail];
+   *mod = data >> 8;
+   *key = data & 0xff;
+   rep_q.tail = (rep_q.tail + 1) % REP_Q_SIZE;
+   return true;
+}
 
 void handle_event(event_t *ev)
 {
@@ -247,18 +216,20 @@ void handle_event(event_t *ev)
       case EV_BUTTON:
          printf("button %d\n", ev->button.id);
          if(ev->button.id == BUTTON_ID_L_CW) {
-            usbpwr_enable_vbus(true);
+            rep_push(0, KEY_VOLUME_UP);
+            rep_push(0, 0);
          }
          if(ev->button.id == BUTTON_ID_L_CCW) {
-            usbpwr_enable_vbus(false);
+            rep_push(0, KEY_VOLUME_DOWN);
+            rep_push(0, 0);
          }
          if(ev->button.id == BUTTON_ID_R_CW) {
-            if(b < 16) b++;
-            led_set(b);
+            rep_push(0, KEY_MEDIA_NEXT);
+            rep_push(0, 0);
          }
          if(ev->button.id == BUTTON_ID_R_CCW) {
-            if(b > 0) b--;
-            led_set(b);
+            rep_push(0, KEY_MEDIA_PREV);
+            rep_push(0, 0);
          }
          printf("%d\n", b);
          break;
@@ -273,13 +244,16 @@ void handle_event(event_t *ev)
          if(ev->uart.c == 'c') usbpwr_connect(true);
          if(ev->uart.c == 'C') usbpwr_connect(false);
          if(ev->uart.c == 'k') {
-            if(usbInterruptIsReady()) {
-               printf("usb ready\n");
-               buildReport(1);
-               usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-            } else {
-               printf("usb not ready\n");
-            }
+            rep_push(0, KEY_I);
+            rep_push(0, 0);
+            //if(usbInterruptIsReady()) {
+            //   printf("usb ready\n");
+            //   reportBuffer[0] = MOD_SHIFT_LEFT;
+            //   reportBuffer[1] = KEY_I;
+            //   usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+            //} else {
+            //   printf("usb not ready\n");
+            //}
          }
          break;
 
@@ -297,6 +271,9 @@ int main(void)
    usbInit();
 
    sei();
+   
+   usbpwr_set_cc(CC_PULLDOWN);
+   usbpwr_connect(true);
 
    for(;;) {
 
@@ -304,6 +281,15 @@ int main(void)
       bool avail = event_poll(&ev);
       if(avail) {
          handle_event(&ev);
+      }
+
+      if(usbInterruptIsReady()) {
+         uint8_t mod, key;
+         if(rep_q_pop(&mod, &key)) {
+            reportBuffer[0] = mod;
+            reportBuffer[1] = key;
+            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+         }
       }
 
       wdt_reset();

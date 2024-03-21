@@ -19,7 +19,6 @@ struct ringbuffer_t {
 static int uart_putchar(char c, FILE *f);
 
 static volatile struct ringbuffer_t rb = { 0, 0 };
-static volatile uint16_t ticks = 0;
 
 void uart_init(uint16_t baudrate_divider)
 {
@@ -73,10 +72,6 @@ void uart_tx(uint8_t c)
 
 	UCSR0B |= (1<<UDRIE0);
 
-	/* Assert PD2 for RS-485 TX */
-
-	PORTD |= (1<<2);
-	ticks = TX_DELAY_TICKS;
 }
 
 
@@ -96,7 +91,6 @@ ISR(USART_UDRE_vect)
 		UCSR0B &= ~(1<<UDRIE0);
 	}
 
-	ticks = TX_DELAY_TICKS;
 }
 
 /*

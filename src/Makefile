@@ -26,7 +26,7 @@ all:	main.hex
 	$(COMPILE) -S $< -o $@
 
 install: all
-	avrdude $(ADFLAGS) -e -V -U flash:w:main.hex:i
+	avrdude $(ADFLAGS) -e -U flash:w:main.hex:i
 
 
 clean:
