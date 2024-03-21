@@ -17,159 +17,52 @@
 #include "usbpwr.h"
 
 
-static void hardwareInit(void)
-{
-   led_init();
-   timer_init();
-   uart_init(UART_BAUD(9600));
-   button_init();
-   usbpwr_init();
+#define KEY_VOLUME_UP    0xe900
+#define KEY_VOLUME_DOWN  0xea00
+#define KEY_PREVIOUSSONG 0xb600
+#define KEY_NEXTSONG     0xb500
+#define KEY_PLAY_PAUSE   0xcd00
+#define KEY_STOP         0xb700
+#define KEY_FAST_FORWARD 0xb400
+#define KEY_FORWARD      0xb300
 
-   //usbDeviceDisconnect();
-   _delay_ms(100);
-   //usbDeviceConnect();
+#define SLEEP_TIME_PLAYING (15 * 60)
+#define SLEEP_TIME_STOPPED ( 1 * 60)
 
-}
-
-/* ------------------------------------------------------------------------- */
-
-#define NUM_KEYS    17
-
-
-/* ------------------------------------------------------------------------- */
-/* ----------------------------- USB interface ----------------------------- */
-/* ------------------------------------------------------------------------- */
-
-static uchar    reportBuffer[2];    /* buffer for HID reports */
-static uchar    idleRate;           /* in 4 ms units */
-
-const PROGMEM char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = {   /* USB report descriptor */
-   0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
-   0x09, 0x06,                    // USAGE (Keyboard)
-   0xa1, 0x01,                    // COLLECTION (Application)
-   0x05, 0x07,                    //   USAGE_PAGE (Keyboard)
-   0x19, 0xe0,                    //   USAGE_MINIMUM (Keyboard LeftControl)
-   0x29, 0xe7,                    //   USAGE_MAXIMUM (Keyboard Right GUI)
-   0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
-   0x25, 0x01,                    //   LOGICAL_MAXIMUM (1)
-   0x75, 0x01,                    //   REPORT_SIZE (1)
-   0x95, 0x08,                    //   REPORT_COUNT (8)
-   0x81, 0x02,                    //   INPUT (Data,Var,Abs)
-   0x95, 0x01,                    //   REPORT_COUNT (1)
-   0x75, 0x08,                    //   REPORT_SIZE (8)
-   0x25, 0x90,                    //   LOGICAL_MAXIMUM (101)
-   0x19, 0x00,                    //   USAGE_MINIMUM (Reserved (no event indicated))
-   0x29, 0xf0,                    //   USAGE_MAXIMUM (Keyboard Application)
-   0x81, 0x00,                    //   INPUT (Data,Ary,Abs)
-   0xc0                           // END_COLLECTION
+enum mode {
+   MODE_RUN,
+   MODE_SLEEP,
+   MODE_CHARGE,
 };
-/* We use a simplifed keyboard report descriptor which does not support the
- * boot protocol. We don't allow setting status LEDs and we only allow one
- * simultaneous key press (except modifiers). We can therefore use short
- * 2 byte input reports.
- * The report descriptor has been created with usb.org's "HID Descriptor Tool"
- * which can be downloaded from http://www.usb.org/developers/hidpage/.
- * Redundant entries (such as LOGICAL_MINIMUM and USAGE_PAGE) have been omitted
- * for the second INPUT item.
- */
 
-/* Keyboard usage values, see usb.org's HID-usage-tables document, chapter
- * 10 Keyboard/Keypad Page for more codes.
- */
-#define MOD_CONTROL_LEFT    (1<<0)
-#define MOD_SHIFT_LEFT      (1<<1)
-#define MOD_ALT_LEFT        (1<<2)
-#define MOD_GUI_LEFT        (1<<3)
-#define MOD_CONTROL_RIGHT   (1<<4)
-#define MOD_SHIFT_RIGHT     (1<<5)
-#define MOD_ALT_RIGHT       (1<<6)
-#define MOD_GUI_RIGHT       (1<<7)
 
-#define KEY_A       4
-#define KEY_B       5
-#define KEY_C       6
-#define KEY_D       7
-#define KEY_E       8
-#define KEY_F       9
-#define KEY_G       10
-#define KEY_H       11
-#define KEY_I       12
-#define KEY_J       13
-#define KEY_K       14
-#define KEY_L       15
-#define KEY_M       16
-#define KEY_N       17
-#define KEY_O       18
-#define KEY_P       19
-#define KEY_Q       20
-#define KEY_R       21
-#define KEY_S       22
-#define KEY_T       23
-#define KEY_U       24
-#define KEY_V       25
-#define KEY_W       26
-#define KEY_X       27
-#define KEY_Y       28
-#define KEY_Z       29
-#define KEY_1       30
-#define KEY_2       31
-#define KEY_3       32
-#define KEY_4       33
-#define KEY_5       34
-#define KEY_6       35
-#define KEY_7       36
-#define KEY_8       37
-#define KEY_9       38
-#define KEY_0       39
+const PROGMEM char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = {
+  0x05, 0x0c, 0x09, 0x01, 0xa1, 0x01, 0x85, 0x03, 0x19, 0x00, 0x2a, 0x3c, 0x03,
+  0x15, 0x00, 0x26, 0x3c, 0x03, 0x95, 0x01, 0x75, 0x10, 0x81, 0x00, 0xc0, 0x05,
+  0x01, 0x09, 0x80, 0xa1, 0x01, 0x85, 0x02, 0x05, 0x01, 0x19, 0x81, 0x29, 0x83,
+  0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02, 0x95, 0x01, 0x75,
+  0x05, 0x81, 0x01, 0xc0, 0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x05,
+  0x07, 0x15, 0x00, 0x25, 0x01, 0x19, 0x00, 0x29, 0x77, 0x95, 0x78, 0x75, 0x01,
+  0x81, 0x02, 0xc0
+};
 
-#define KEY_F1      58
-#define KEY_F2      59
-#define KEY_F3      60
-#define KEY_F4      61
-#define KEY_F5      62
-#define KEY_F6      63
-#define KEY_F7      64
-#define KEY_F8      65
-#define KEY_F9      66
-#define KEY_F10     67
-#define KEY_F11     68
-#define KEY_F12     128
-
-#define KEY_VOLUME_UP 0x80
-#define KEY_VOLUME_DOWN 0x81
-#define KEY_VOLUME_MUTE 0x82
-#define KEY_MEDIA_NEXT 0x83
-#define KEY_MEDIA_PREV 0x84
-#define KEY_MEDIA_STOP 0x85
-#define KEY_MEDIA_PLAY 0x86
-#define KEY_MEDIA_PAUSE 0x87
-#define KEY_MEDIA_MUTE 0x88
+static uchar report[3];
+static enum mode mode = MODE_RUN;
+static uint16_t sleep_timer = 0;
+static bool playing = false;
 
 
 uchar	usbFunctionSetup(uchar data[8])
 {
-   usbRequest_t    *rq = (void *)data;
-
-   printf("us\n");
-
-   usbMsgPtr = reportBuffer;
+   usbRequest_t *rq = (void *)data;
    if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS) {
-      /* class request type */
       if(rq->bRequest == USBRQ_HID_GET_REPORT) {
-         /* wValue: ReportType (highbyte), ReportID (lowbyte) */
-         printf("get report\n");
-         /* we only have one report type, so don't look at wValue */
-         return sizeof(reportBuffer);
+         return sizeof(report);
       } else if(rq->bRequest == USBRQ_HID_GET_IDLE) {
-         printf("get idle\n");
-         usbMsgPtr = &idleRate;
          return 1;
       } else if(rq->bRequest == USBRQ_HID_SET_IDLE) {
-         printf("set idle\n");
-         idleRate = rq->wValue.bytes[1];
+         return 0;
       }
-   }else{
-      /* no vendor specific requests implemented */
    }
    return 0;
 }
@@ -183,55 +76,113 @@ struct rep_q {
 } rep_q;
 
 
-void rep_push(uint8_t mod, uint8_t key)
+void rep_push(uint16_t data)
 {
-   rep_q.data[rep_q.head] = (mod << 8) | key;
+   rep_q.data[rep_q.head] = data;
    rep_q.head = (rep_q.head + 1) % REP_Q_SIZE;
 }
 
-bool rep_q_pop(uint8_t *mod, uint8_t *key)
+
+bool rep_q_pop(uint16_t *data)
 {
    if(rep_q.head == rep_q.tail) return false;
-   uint16_t data = rep_q.data[rep_q.tail];
-   *mod = data >> 8;
-   *key = data & 0xff;
+   *data = rep_q.data[rep_q.tail];
    rep_q.tail = (rep_q.tail + 1) % REP_Q_SIZE;
    return true;
 }
 
+
+static void set_mode(enum mode m)
+{
+   mode = m;
+   if(mode == MODE_RUN) {
+      printf("mode hid\n");
+      playing = false;
+      usbpwr_set_cc(CC_PULLDOWN);
+      usbpwr_connect(true);
+      usbpwr_enable_vbus(false);
+   }
+   if(mode == MODE_CHARGE) {
+      printf("mode charge\n");
+      usbpwr_set_cc(CC_PULLUP);
+      usbpwr_connect(false);
+      usbpwr_enable_vbus(true);
+   }
+}
+
+
 void handle_event(event_t *ev)
 {
-   static uint8_t b = 0;
+   static uint8_t blink = 0;
+   blink ++;
 
    switch(ev->type) {
       case EV_TICK_1HZ:
+         if(mode == MODE_SLEEP) {
+            set_mode(MODE_CHARGE);
+         }
+         if(sleep_timer > 0) {
+            sleep_timer--;
+            if(sleep_timer == 0) {
+               printf("sleep\n");
+               rep_push(KEY_STOP);
+               rep_push(0);
+               set_mode(MODE_SLEEP);
+            }
+         }
          break;
 
       case EV_TICK_10HZ:
+         if(mode == MODE_RUN) {
+            if(playing) {
+               led_set((blink & 8) == 8);
+            } else {
+               led_set(1);
+            }
+         }
+         if(mode == MODE_CHARGE) {
+            led_set(0);
+         }
          break;
 
       case EV_TICK_100HZ:
          break;
 
       case EV_BUTTON:
-         printf("button %d\n", ev->button.id);
+         if(mode == MODE_CHARGE) {
+            set_mode(MODE_RUN);
+            return;
+         }
          if(ev->button.id == BUTTON_ID_L_CW) {
-            rep_push(0, KEY_VOLUME_UP);
-            rep_push(0, 0);
+            rep_push(KEY_VOLUME_UP);
+            rep_push(0);
          }
          if(ev->button.id == BUTTON_ID_L_CCW) {
-            rep_push(0, KEY_VOLUME_DOWN);
-            rep_push(0, 0);
+            rep_push(KEY_VOLUME_DOWN);
+            rep_push(0);
+         }
+         if(ev->button.id == BUTTON_ID_R_PUSH) {
+            playing = !playing;
+            rep_push(KEY_STOP);
+            rep_push(0);
+            if(playing) {
+               rep_push(KEY_PLAY_PAUSE);
+               rep_push(0);
+            }
          }
          if(ev->button.id == BUTTON_ID_R_CW) {
-            rep_push(0, KEY_MEDIA_NEXT);
-            rep_push(0, 0);
+            if(playing) {
+               rep_push(KEY_NEXTSONG);
+               rep_push(0);
+            }
          }
          if(ev->button.id == BUTTON_ID_R_CCW) {
-            rep_push(0, KEY_MEDIA_PREV);
-            rep_push(0, 0);
+            if(playing) {
+               rep_push(KEY_PREVIOUSSONG);
+               rep_push(0);
+            }
          }
-         printf("%d\n", b);
+         sleep_timer = playing ? SLEEP_TIME_PLAYING : SLEEP_TIME_STOPPED;
          break;
 
       case EV_UART:
@@ -241,20 +192,8 @@ void handle_event(event_t *ev)
          if(ev->uart.c == 'u') usbpwr_set_cc(CC_PULLUP);
          if(ev->uart.c == 'd') usbpwr_set_cc(CC_PULLDOWN);
          if(ev->uart.c == 'n') usbpwr_set_cc(CC_NONE);
-         if(ev->uart.c == 'c') usbpwr_connect(true);
-         if(ev->uart.c == 'C') usbpwr_connect(false);
-         if(ev->uart.c == 'k') {
-            rep_push(0, KEY_I);
-            rep_push(0, 0);
-            //if(usbInterruptIsReady()) {
-            //   printf("usb ready\n");
-            //   reportBuffer[0] = MOD_SHIFT_LEFT;
-            //   reportBuffer[1] = KEY_I;
-            //   usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-            //} else {
-            //   printf("usb not ready\n");
-            //}
-         }
+         if(ev->uart.c == 'c') set_mode(MODE_CHARGE);
+         if(ev->uart.c == 'h') set_mode(MODE_RUN);
          break;
 
       default:
@@ -265,15 +204,17 @@ void handle_event(event_t *ev)
 
 int main(void)
 {
+   led_init();
+   timer_init();
+   uart_init(UART_BAUD(9600));
+   button_init();
+   usbpwr_init();
    wdt_enable(WDTO_2S);
-   hardwareInit();
-   odDebugInit();
    usbInit();
 
    sei();
-   
-   usbpwr_set_cc(CC_PULLDOWN);
-   usbpwr_connect(true);
+
+   set_mode(MODE_RUN);
 
    for(;;) {
 
@@ -284,16 +225,19 @@ int main(void)
       }
 
       if(usbInterruptIsReady()) {
-         uint8_t mod, key;
-         if(rep_q_pop(&mod, &key)) {
-            reportBuffer[0] = mod;
-            reportBuffer[1] = key;
-            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+         uint16_t data;
+         if(rep_q_pop(&data)) {
+            report[0] = 0x03;
+            report[1] = data >> 8;
+            report[2] = data & 0xff;
+            printf(">> %02x %02x\n", report[0], report[1]);
+            usbSetInterrupt(report, sizeof(report));
          }
       }
 
       wdt_reset();
       usbPoll();
+      button_poll();
    }
    return 0;
 }

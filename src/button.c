@@ -34,7 +34,8 @@ void button_init(void)
 {
    // enable pullups
    PORTB |= (1<<PB1) | (1<<PB2);
-   PORTD |= (1<<PD6) | (1<<PD7);
+   PORTC |= (1<<PC3);
+   PORTD |= (1<<PD5) | (1<<PD6) | (1<<PD7);
    // enable pin change interrupt on PB1, PB2, PB6 and PB7
    PCMSK0 |= (1<<PCINT1) | (1<<PCINT2);
    PCMSK2 |= (1<<PCINT22) | (1<<PCINT23);
@@ -46,6 +47,29 @@ static uint8_t process(uint8_t idx, uint8_t pinstate)
 {
 	state[idx] = ttable[state[idx] & 0xf][pinstate];
 	return state[idx] & 0x30;
+}
+
+
+void button_poll(void)
+{
+    static uint16_t b1 = 0;
+    static uint16_t b2 = 0;
+
+    b1 = (b1 << 1) | !!(PINC & (1<<PC3));
+    b2 = (b2 << 1) | !!(PIND & (1<<PD5));
+        
+    event_t ev;
+    ev.type = EV_BUTTON;
+
+    if(b1 == 0x8000) {
+        ev.button.id = BUTTON_ID_R_PUSH;
+        event_push(&ev);
+    }
+
+    if(b2 == 0x8000) {
+        ev.button.id = BUTTON_ID_L_PUSH;
+        event_push(&ev);
+    }
 }
 
 

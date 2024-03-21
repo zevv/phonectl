@@ -11,5 +11,6 @@ enum button_id {
 };
 
 void button_init();
+void button_poll();
 
 #endif
