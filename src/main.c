@@ -96,14 +96,12 @@ static void set_mode(enum mode m)
 {
    mode = m;
    if(mode == MODE_RUN) {
-      printf("mode hid\n");
       playing = false;
       usbpwr_set_cc(CC_PULLDOWN);
       usbpwr_connect(true);
       usbpwr_enable_vbus(false);
    }
    if(mode == MODE_CHARGE) {
-      printf("mode charge\n");
       usbpwr_set_cc(CC_PULLUP);
       usbpwr_connect(false);
       usbpwr_enable_vbus(true);
@@ -134,11 +132,7 @@ void handle_event(event_t *ev)
 
       case EV_TICK_10HZ:
          if(mode == MODE_RUN) {
-            if(playing) {
-               led_set((blink & 8) == 8);
-            } else {
-               led_set(1);
-            }
+            led_set(1);
          }
          if(mode == MODE_CHARGE) {
             led_set(0);
@@ -224,7 +218,7 @@ int main(void)
          handle_event(&ev);
       }
 
-      if(usbInterruptIsReady()) {
+      if(mode == MODE_RUN && usbInterruptIsReady()) {
          uint16_t data;
          if(rep_q_pop(&data)) {
             report[0] = 0x03;

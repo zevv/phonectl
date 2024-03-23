@@ -15,7 +15,7 @@ void led_init(void)
 
 void led_set(uint8_t b)
 {
-	brightness = (b > 0) ? (1<<b) : 0;
+	brightness = (b > 0) ? (1<<(b-1)) : 0;
 	if(brightness > 16) brightness = 16;
 }
 
